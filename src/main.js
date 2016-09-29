@@ -1,3 +1,6 @@
-import vcBreadcrumb from './Breadcrumb'
+import vcBreadcrumb from './Breadcrumb.vue'
+import vcBreadcrumbItem from './BreadcrumbItem.vue'
 
-module.export = vcBreadcrumb
+vcBreadcrumb.vcBreadcrumbItem = vcBreadcrumbItem
+
+module.exports = vcBreadcrumb

@@ -44,18 +44,45 @@
         <br>
 
         <vc-breadcrumb
-            v-show="defaults === false"
-            :routes="routes"
-            :separator="separator"
-        >
-            <vc-separator></vc-separator>
-        </vc-breadcrumb>
-
-        <vc-breadcrumb
             v-show="defaults === true"
             :routes="routes"
             :separator="separator"
         >
+        </vc-breadcrumb>
+
+        <vc-breadcrumb
+            v-show="defaults === false"
+            :routes="routes"
+            :separator="separator"
+        >
+            <vc-separator slot="separator"></vc-separator>
+        </vc-breadcrumb>
+
+        <vc-breadcrumb 
+            v-show="defaults === true"
+            :separator="separator"
+        >
+            <vc-breadcrumb-item url="https://github.com/IndexXuan">首页</vc-breadcrumb-item>
+            <vc-breadcrumb-item>第二级</vc-breadcrumb-item>
+            <vc-breadcrumb-item>第三级</vc-breadcrumb-item>
+        </vc-breadcrumb>
+
+        <vc-breadcrumb 
+            v-show="defaults === false"
+            :separator="separator"
+        >
+            <vc-breadcrumb-item url="https://github.com/IndexXuan">
+                首页
+                <vc-separator slot="separator"></vc-separator>
+            </vc-breadcrumb-item>
+            <vc-breadcrumb-item>
+                第二级
+                <vc-separator slot="separator"></vc-separator>
+            </vc-breadcrumb-item>
+            <vc-breadcrumb-item>
+                第三级
+                <vc-separator slot="separator"></vc-separator>
+            </vc-breadcrumb-item>
         </vc-breadcrumb>
 
         <div class="form-group">

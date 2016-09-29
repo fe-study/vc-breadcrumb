@@ -1,12 +1,19 @@
 import Vue from 'vue'
 import vcBreadcrumb from '../src'
 
+const { vcBreadcrumbItem } = vcBreadcrumb
+
 var vcSeparator = Vue.extend({
     template: '<span class="separator-class">-/-</span>'
 })
 
 new Vue({
 	el: '#app',
+	components: {
+        vcBreadcrumb,
+        vcBreadcrumbItem,
+        vcSeparator
+	},
 	data () {
 		return {
             defaults: false,
@@ -29,9 +36,5 @@ new Vue({
         customsFn () {
             this.defaults = false
         }
-    },
-	components: {
-        vcSeparator,
-        vcBreadcrumb
-	}
+    }
 })

@@ -1,13 +1,15 @@
 <template>
     <ol class="vc-breadcrumb-component breadcrumb">
         <slot name="breadcrumb-before"></slot>
+        <slot>
         <template v-for="item in historyRoutes">
             <li>
-                <a :href="item.url">{{ item.text }}</a>
-                <slot><span class="separator">{{ separator }}</span></slot>
-                <slot name="separator"></slot>
+                <a v-if="item.url" :href="item.url">{{ item.text }}</a>
+                <span v-else>{{ item.text }}</span>
+                <slot name="separator"><span class="separator">{{ separator }}</span></slot>
             </li>
         </template>
+        </slot>
         <li class="active" v-if="activeRoute">
             {{ activeRoute.text }}
         </li>
@@ -28,9 +30,17 @@
 
 <script>
 export default {
+    name: 'vc-breadcrumb',
     props: {
-        routes: Array,
-        separator: '/'
+        routes: {
+            type: Array,
+            default () {
+                return []
+            }
+        },
+        separator: {
+            default: '/'
+        }
     },
     computed: {
         rs () {
@@ -45,8 +55,7 @@ export default {
                 }
                 return ret
             } else if (Array.isArray(this.routes)) {
-                if (this.routes[0].url && this.routes[0].text) 
-                    return this.routes
+                return this.routes
             } else {
                 console.warn('[vcBreadcrumb warn]: pay attention to the routes you pass in!')
                 return void 0

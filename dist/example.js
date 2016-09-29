@@ -71,7 +71,7 @@ return /******/ (function(modules) { // webpackBootstrap
 /******/ 	__webpack_require__.p = "";
 /******/
 /******/ 	// Load entry module and return exports
-/******/ 	return __webpack_require__(__webpack_require__.s = 84);
+/******/ 	return __webpack_require__(__webpack_require__.s = 90);
 /******/ })
 /************************************************************************/
 /******/ ([
@@ -97,7 +97,7 @@ module.exports = function(it, key){
 /***/ function(module, exports, __webpack_require__) {
 
 // to indexed object, toObject with fallback for non-array-like ES3 strings
-var IObject = __webpack_require__(56)
+var IObject = __webpack_require__(60)
   , defined = __webpack_require__(14);
 module.exports = function(it){
   return IObject(defined(it));
@@ -130,7 +130,7 @@ module.exports = __webpack_require__(3) ? function(object, key, value){
 /***/ function(module, exports, __webpack_require__) {
 
 var anObject       = __webpack_require__(10)
-  , IE8_DOM_DEFINE = __webpack_require__(30)
+  , IE8_DOM_DEFINE = __webpack_require__(33)
   , toPrimitive    = __webpack_require__(24)
   , dP             = Object.defineProperty;
 
@@ -186,7 +186,7 @@ module.exports = function(exec){
 /***/ function(module, exports, __webpack_require__) {
 
 // 19.1.2.14 / 15.2.3.14 Object.keys(O)
-var $keys       = __webpack_require__(35)
+var $keys       = __webpack_require__(38)
   , enumBugKeys = __webpack_require__(15);
 
 module.exports = Object.keys || function keys(O){
@@ -259,7 +259,7 @@ module.exports = (
 
 var global    = __webpack_require__(0)
   , core      = __webpack_require__(7)
-  , ctx       = __webpack_require__(53)
+  , ctx       = __webpack_require__(57)
   , hide      = __webpack_require__(4)
   , PROTOTYPE = 'prototype';
 
@@ -420,7 +420,316 @@ exports.f = __webpack_require__(6);
 
 /***/ },
 /* 27 */,
-/* 28 */
+/* 28 */,
+/* 29 */
+/***/ function(module, exports) {
+
+/*
+	MIT License http://www.opensource.org/licenses/mit-license.php
+	Author Tobias Koppers @sokra
+*/
+var stylesInDom = {},
+	memoize = function(fn) {
+		var memo;
+		return function () {
+			if (typeof memo === "undefined") memo = fn.apply(this, arguments);
+			return memo;
+		};
+	},
+	isOldIE = memoize(function() {
+		return /msie [6-9]\b/.test(window.navigator.userAgent.toLowerCase());
+	}),
+	getHeadElement = memoize(function () {
+		return document.head || document.getElementsByTagName("head")[0];
+	}),
+	singletonElement = null,
+	singletonCounter = 0,
+	styleElementsInsertedAtTop = [];
+
+module.exports = function(list, options) {
+	if(typeof DEBUG !== "undefined" && DEBUG) {
+		if(typeof document !== "object") throw new Error("The style-loader cannot be used in a non-browser environment");
+	}
+
+	options = options || {};
+	// Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
+	// tags it will allow on a page
+	if (typeof options.singleton === "undefined") options.singleton = isOldIE();
+
+	// By default, add <style> tags to the bottom of <head>.
+	if (typeof options.insertAt === "undefined") options.insertAt = "bottom";
+
+	var styles = listToStyles(list);
+	addStylesToDom(styles, options);
+
+	return function update(newList) {
+		var mayRemove = [];
+		for(var i = 0; i < styles.length; i++) {
+			var item = styles[i];
+			var domStyle = stylesInDom[item.id];
+			domStyle.refs--;
+			mayRemove.push(domStyle);
+		}
+		if(newList) {
+			var newStyles = listToStyles(newList);
+			addStylesToDom(newStyles, options);
+		}
+		for(var i = 0; i < mayRemove.length; i++) {
+			var domStyle = mayRemove[i];
+			if(domStyle.refs === 0) {
+				for(var j = 0; j < domStyle.parts.length; j++)
+					domStyle.parts[j]();
+				delete stylesInDom[domStyle.id];
+			}
+		}
+	};
+}
+
+function addStylesToDom(styles, options) {
+	for(var i = 0; i < styles.length; i++) {
+		var item = styles[i];
+		var domStyle = stylesInDom[item.id];
+		if(domStyle) {
+			domStyle.refs++;
+			for(var j = 0; j < domStyle.parts.length; j++) {
+				domStyle.parts[j](item.parts[j]);
+			}
+			for(; j < item.parts.length; j++) {
+				domStyle.parts.push(addStyle(item.parts[j], options));
+			}
+		} else {
+			var parts = [];
+			for(var j = 0; j < item.parts.length; j++) {
+				parts.push(addStyle(item.parts[j], options));
+			}
+			stylesInDom[item.id] = {id: item.id, refs: 1, parts: parts};
+		}
+	}
+}
+
+function listToStyles(list) {
+	var styles = [];
+	var newStyles = {};
+	for(var i = 0; i < list.length; i++) {
+		var item = list[i];
+		var id = item[0];
+		var css = item[1];
+		var media = item[2];
+		var sourceMap = item[3];
+		var part = {css: css, media: media, sourceMap: sourceMap};
+		if(!newStyles[id])
+			styles.push(newStyles[id] = {id: id, parts: [part]});
+		else
+			newStyles[id].parts.push(part);
+	}
+	return styles;
+}
+
+function insertStyleElement(options, styleElement) {
+	var head = getHeadElement();
+	var lastStyleElementInsertedAtTop = styleElementsInsertedAtTop[styleElementsInsertedAtTop.length - 1];
+	if (options.insertAt === "top") {
+		if(!lastStyleElementInsertedAtTop) {
+			head.insertBefore(styleElement, head.firstChild);
+		} else if(lastStyleElementInsertedAtTop.nextSibling) {
+			head.insertBefore(styleElement, lastStyleElementInsertedAtTop.nextSibling);
+		} else {
+			head.appendChild(styleElement);
+		}
+		styleElementsInsertedAtTop.push(styleElement);
+	} else if (options.insertAt === "bottom") {
+		head.appendChild(styleElement);
+	} else {
+		throw new Error("Invalid value for parameter 'insertAt'. Must be 'top' or 'bottom'.");
+	}
+}
+
+function removeStyleElement(styleElement) {
+	styleElement.parentNode.removeChild(styleElement);
+	var idx = styleElementsInsertedAtTop.indexOf(styleElement);
+	if(idx >= 0) {
+		styleElementsInsertedAtTop.splice(idx, 1);
+	}
+}
+
+function createStyleElement(options) {
+	var styleElement = document.createElement("style");
+	styleElement.type = "text/css";
+	insertStyleElement(options, styleElement);
+	return styleElement;
+}
+
+function createLinkElement(options) {
+	var linkElement = document.createElement("link");
+	linkElement.rel = "stylesheet";
+	insertStyleElement(options, linkElement);
+	return linkElement;
+}
+
+function addStyle(obj, options) {
+	var styleElement, update, remove;
+
+	if (options.singleton) {
+		var styleIndex = singletonCounter++;
+		styleElement = singletonElement || (singletonElement = createStyleElement(options));
+		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false);
+		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true);
+	} else if(obj.sourceMap &&
+		typeof URL === "function" &&
+		typeof URL.createObjectURL === "function" &&
+		typeof URL.revokeObjectURL === "function" &&
+		typeof Blob === "function" &&
+		typeof btoa === "function") {
+		styleElement = createLinkElement(options);
+		update = updateLink.bind(null, styleElement);
+		remove = function() {
+			removeStyleElement(styleElement);
+			if(styleElement.href)
+				URL.revokeObjectURL(styleElement.href);
+		};
+	} else {
+		styleElement = createStyleElement(options);
+		update = applyToTag.bind(null, styleElement);
+		remove = function() {
+			removeStyleElement(styleElement);
+		};
+	}
+
+	update(obj);
+
+	return function updateStyle(newObj) {
+		if(newObj) {
+			if(newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap)
+				return;
+			update(obj = newObj);
+		} else {
+			remove();
+		}
+	};
+}
+
+var replaceText = (function () {
+	var textStore = [];
+
+	return function (index, replacement) {
+		textStore[index] = replacement;
+		return textStore.filter(Boolean).join('\n');
+	};
+})();
+
+function applyToSingletonTag(styleElement, index, remove, obj) {
+	var css = remove ? "" : obj.css;
+
+	if (styleElement.styleSheet) {
+		styleElement.styleSheet.cssText = replaceText(index, css);
+	} else {
+		var cssNode = document.createTextNode(css);
+		var childNodes = styleElement.childNodes;
+		if (childNodes[index]) styleElement.removeChild(childNodes[index]);
+		if (childNodes.length) {
+			styleElement.insertBefore(cssNode, childNodes[index]);
+		} else {
+			styleElement.appendChild(cssNode);
+		}
+	}
+}
+
+function applyToTag(styleElement, obj) {
+	var css = obj.css;
+	var media = obj.media;
+
+	if(media) {
+		styleElement.setAttribute("media", media)
+	}
+
+	if(styleElement.styleSheet) {
+		styleElement.styleSheet.cssText = css;
+	} else {
+		while(styleElement.firstChild) {
+			styleElement.removeChild(styleElement.firstChild);
+		}
+		styleElement.appendChild(document.createTextNode(css));
+	}
+}
+
+function updateLink(linkElement, obj) {
+	var css = obj.css;
+	var sourceMap = obj.sourceMap;
+
+	if(sourceMap) {
+		// http://stackoverflow.com/a/26603875
+		css += "\n/*# sourceMappingURL=data:application/json;base64," + btoa(unescape(encodeURIComponent(JSON.stringify(sourceMap)))) + " */";
+	}
+
+	var blob = new Blob([css], { type: "text/css" });
+
+	var oldSrc = linkElement.href;
+
+	linkElement.href = URL.createObjectURL(blob);
+
+	if(oldSrc)
+		URL.revokeObjectURL(oldSrc);
+}
+
+
+/***/ },
+/* 30 */
+/***/ function(module, exports) {
+
+/*
+	MIT License http://www.opensource.org/licenses/mit-license.php
+	Author Tobias Koppers @sokra
+*/
+// css base code, injected by the css-loader
+module.exports = function() {
+	var list = [];
+
+	// return the list of modules as css string
+	list.toString = function toString() {
+		var result = [];
+		for(var i = 0; i < this.length; i++) {
+			var item = this[i];
+			if(item[2]) {
+				result.push("@media " + item[2] + "{" + item[1] + "}");
+			} else {
+				result.push(item[1]);
+			}
+		}
+		return result.join("");
+	};
+
+	// import a list of modules into the list
+	list.i = function(modules, mediaQuery) {
+		if(typeof modules === "string")
+			modules = [[null, modules, ""]];
+		var alreadyImportedModules = {};
+		for(var i = 0; i < this.length; i++) {
+			var id = this[i][0];
+			if(typeof id === "number")
+				alreadyImportedModules[id] = true;
+		}
+		for(i = 0; i < modules.length; i++) {
+			var item = modules[i];
+			// skip already imported module
+			// this implementation is not 100% perfect for weird media query combinations
+			//  when a module is imported multiple times with different media queries.
+			//  I hope this will never occur (Hey this way we have smaller bundles)
+			if(typeof item[0] !== "number" || !alreadyImportedModules[item[0]]) {
+				if(mediaQuery && !item[2]) {
+					item[2] = mediaQuery;
+				} else if(mediaQuery) {
+					item[2] = "(" + item[2] + ") and (" + mediaQuery + ")";
+				}
+				list.push(item);
+			}
+		}
+	};
+	return list;
+};
+
+
+/***/ },
+/* 31 */
 /***/ function(module, exports) {
 
 var toString = {}.toString;
@@ -430,7 +739,7 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 29 */
+/* 32 */
 /***/ function(module, exports, __webpack_require__) {
 
 var isObject = __webpack_require__(11)
@@ -442,28 +751,28 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 30 */
+/* 33 */
 /***/ function(module, exports, __webpack_require__) {
 
 module.exports = !__webpack_require__(3) && !__webpack_require__(8)(function(){
-  return Object.defineProperty(__webpack_require__(29)('div'), 'a', {get: function(){ return 7; }}).a != 7;
+  return Object.defineProperty(__webpack_require__(32)('div'), 'a', {get: function(){ return 7; }}).a != 7;
 });
 
 /***/ },
-/* 31 */
+/* 34 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
 'use strict';
 var LIBRARY        = __webpack_require__(18)
   , $export        = __webpack_require__(16)
-  , redefine       = __webpack_require__(36)
+  , redefine       = __webpack_require__(39)
   , hide           = __webpack_require__(4)
   , has            = __webpack_require__(1)
   , Iterators      = __webpack_require__(17)
-  , $iterCreate    = __webpack_require__(58)
+  , $iterCreate    = __webpack_require__(62)
   , setToStringTag = __webpack_require__(20)
-  , getPrototypeOf = __webpack_require__(65)
+  , getPrototypeOf = __webpack_require__(69)
   , ITERATOR       = __webpack_require__(6)('iterator')
   , BUGGY          = !([].keys && 'next' in [].keys()) // Safari has buggy iterators w/o `next`
   , FF_ITERATOR    = '@@iterator'
@@ -526,12 +835,12 @@ module.exports = function(Base, NAME, Constructor, next, DEFAULT, IS_SET, FORCED
 };
 
 /***/ },
-/* 32 */
+/* 35 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 19.1.2.2 / 15.2.3.5 Object.create(O [, Properties])
 var anObject    = __webpack_require__(10)
-  , dPs         = __webpack_require__(62)
+  , dPs         = __webpack_require__(66)
   , enumBugKeys = __webpack_require__(15)
   , IE_PROTO    = __webpack_require__(21)('IE_PROTO')
   , Empty       = function(){ /* empty */ }
@@ -540,13 +849,13 @@ var anObject    = __webpack_require__(10)
 // Create object with fake `null` prototype: use iframe Object with cleared prototype
 var createDict = function(){
   // Thrash, waste and sodomy: IE GC bug
-  var iframe = __webpack_require__(29)('iframe')
+  var iframe = __webpack_require__(32)('iframe')
     , i      = enumBugKeys.length
     , lt     = '<'
     , gt     = '>'
     , iframeDocument;
   iframe.style.display = 'none';
-  __webpack_require__(55).appendChild(iframe);
+  __webpack_require__(59).appendChild(iframe);
   iframe.src = 'javascript:'; // eslint-disable-line no-script-url
   // createDict = iframe.contentWindow.Object;
   // html.removeChild(iframe);
@@ -573,11 +882,11 @@ module.exports = Object.create || function create(O, Properties){
 
 
 /***/ },
-/* 33 */
+/* 36 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 19.1.2.7 / 15.2.3.4 Object.getOwnPropertyNames(O)
-var $keys      = __webpack_require__(35)
+var $keys      = __webpack_require__(38)
   , hiddenKeys = __webpack_require__(15).concat('length', 'prototype');
 
 exports.f = Object.getOwnPropertyNames || function getOwnPropertyNames(O){
@@ -585,18 +894,18 @@ exports.f = Object.getOwnPropertyNames || function getOwnPropertyNames(O){
 };
 
 /***/ },
-/* 34 */
+/* 37 */
 /***/ function(module, exports) {
 
 exports.f = Object.getOwnPropertySymbols;
 
 /***/ },
-/* 35 */
+/* 38 */
 /***/ function(module, exports, __webpack_require__) {
 
 var has          = __webpack_require__(1)
   , toIObject    = __webpack_require__(2)
-  , arrayIndexOf = __webpack_require__(52)(false)
+  , arrayIndexOf = __webpack_require__(56)(false)
   , IE_PROTO     = __webpack_require__(21)('IE_PROTO');
 
 module.exports = function(object, names){
@@ -613,13 +922,13 @@ module.exports = function(object, names){
 };
 
 /***/ },
-/* 36 */
+/* 39 */
 /***/ function(module, exports, __webpack_require__) {
 
 module.exports = __webpack_require__(4);
 
 /***/ },
-/* 37 */
+/* 40 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 7.1.13 ToObject(argument)
@@ -629,7 +938,7 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 38 */
+/* 41 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -10707,10 +11016,10 @@ setTimeout(function () {
 }, 0);
 
 module.exports = Vue;
-/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(46), __webpack_require__(40)))
+/* WEBPACK VAR INJECTION */}.call(exports, __webpack_require__(50), __webpack_require__(43)))
 
 /***/ },
-/* 39 */
+/* 42 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -10721,17 +11030,23 @@ Object.defineProperty(exports, "__esModule", {
 });
 exports.vcBreadcrumb = undefined;
 
-var _Breadcrumb = __webpack_require__(83);
+var _Breadcrumb = __webpack_require__(88);
 
 var _Breadcrumb2 = _interopRequireDefault(_Breadcrumb);
 
+var _BreadcrumbItem = __webpack_require__(89);
+
+var _BreadcrumbItem2 = _interopRequireDefault(_BreadcrumbItem);
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+_Breadcrumb2.default.vcBreadcrumbItem = _BreadcrumbItem2.default;
 
 exports.default = _Breadcrumb2.default;
 exports.vcBreadcrumb = _Breadcrumb2.default;
 
 /***/ },
-/* 40 */
+/* 43 */
 /***/ function(module, exports) {
 
 // shim for using process in browser
@@ -10897,268 +11212,16 @@ process.umask = function() { return 0; };
 
 
 /***/ },
-/* 41 */
-/***/ function(module, exports) {
-
-/*
-	MIT License http://www.opensource.org/licenses/mit-license.php
-	Author Tobias Koppers @sokra
-*/
-var stylesInDom = {},
-	memoize = function(fn) {
-		var memo;
-		return function () {
-			if (typeof memo === "undefined") memo = fn.apply(this, arguments);
-			return memo;
-		};
-	},
-	isOldIE = memoize(function() {
-		return /msie [6-9]\b/.test(window.navigator.userAgent.toLowerCase());
-	}),
-	getHeadElement = memoize(function () {
-		return document.head || document.getElementsByTagName("head")[0];
-	}),
-	singletonElement = null,
-	singletonCounter = 0,
-	styleElementsInsertedAtTop = [];
-
-module.exports = function(list, options) {
-	if(typeof DEBUG !== "undefined" && DEBUG) {
-		if(typeof document !== "object") throw new Error("The style-loader cannot be used in a non-browser environment");
-	}
-
-	options = options || {};
-	// Force single-tag solution on IE6-9, which has a hard limit on the # of <style>
-	// tags it will allow on a page
-	if (typeof options.singleton === "undefined") options.singleton = isOldIE();
-
-	// By default, add <style> tags to the bottom of <head>.
-	if (typeof options.insertAt === "undefined") options.insertAt = "bottom";
-
-	var styles = listToStyles(list);
-	addStylesToDom(styles, options);
-
-	return function update(newList) {
-		var mayRemove = [];
-		for(var i = 0; i < styles.length; i++) {
-			var item = styles[i];
-			var domStyle = stylesInDom[item.id];
-			domStyle.refs--;
-			mayRemove.push(domStyle);
-		}
-		if(newList) {
-			var newStyles = listToStyles(newList);
-			addStylesToDom(newStyles, options);
-		}
-		for(var i = 0; i < mayRemove.length; i++) {
-			var domStyle = mayRemove[i];
-			if(domStyle.refs === 0) {
-				for(var j = 0; j < domStyle.parts.length; j++)
-					domStyle.parts[j]();
-				delete stylesInDom[domStyle.id];
-			}
-		}
-	};
-}
-
-function addStylesToDom(styles, options) {
-	for(var i = 0; i < styles.length; i++) {
-		var item = styles[i];
-		var domStyle = stylesInDom[item.id];
-		if(domStyle) {
-			domStyle.refs++;
-			for(var j = 0; j < domStyle.parts.length; j++) {
-				domStyle.parts[j](item.parts[j]);
-			}
-			for(; j < item.parts.length; j++) {
-				domStyle.parts.push(addStyle(item.parts[j], options));
-			}
-		} else {
-			var parts = [];
-			for(var j = 0; j < item.parts.length; j++) {
-				parts.push(addStyle(item.parts[j], options));
-			}
-			stylesInDom[item.id] = {id: item.id, refs: 1, parts: parts};
-		}
-	}
-}
-
-function listToStyles(list) {
-	var styles = [];
-	var newStyles = {};
-	for(var i = 0; i < list.length; i++) {
-		var item = list[i];
-		var id = item[0];
-		var css = item[1];
-		var media = item[2];
-		var sourceMap = item[3];
-		var part = {css: css, media: media, sourceMap: sourceMap};
-		if(!newStyles[id])
-			styles.push(newStyles[id] = {id: id, parts: [part]});
-		else
-			newStyles[id].parts.push(part);
-	}
-	return styles;
-}
-
-function insertStyleElement(options, styleElement) {
-	var head = getHeadElement();
-	var lastStyleElementInsertedAtTop = styleElementsInsertedAtTop[styleElementsInsertedAtTop.length - 1];
-	if (options.insertAt === "top") {
-		if(!lastStyleElementInsertedAtTop) {
-			head.insertBefore(styleElement, head.firstChild);
-		} else if(lastStyleElementInsertedAtTop.nextSibling) {
-			head.insertBefore(styleElement, lastStyleElementInsertedAtTop.nextSibling);
-		} else {
-			head.appendChild(styleElement);
-		}
-		styleElementsInsertedAtTop.push(styleElement);
-	} else if (options.insertAt === "bottom") {
-		head.appendChild(styleElement);
-	} else {
-		throw new Error("Invalid value for parameter 'insertAt'. Must be 'top' or 'bottom'.");
-	}
-}
-
-function removeStyleElement(styleElement) {
-	styleElement.parentNode.removeChild(styleElement);
-	var idx = styleElementsInsertedAtTop.indexOf(styleElement);
-	if(idx >= 0) {
-		styleElementsInsertedAtTop.splice(idx, 1);
-	}
-}
-
-function createStyleElement(options) {
-	var styleElement = document.createElement("style");
-	styleElement.type = "text/css";
-	insertStyleElement(options, styleElement);
-	return styleElement;
-}
-
-function createLinkElement(options) {
-	var linkElement = document.createElement("link");
-	linkElement.rel = "stylesheet";
-	insertStyleElement(options, linkElement);
-	return linkElement;
-}
-
-function addStyle(obj, options) {
-	var styleElement, update, remove;
-
-	if (options.singleton) {
-		var styleIndex = singletonCounter++;
-		styleElement = singletonElement || (singletonElement = createStyleElement(options));
-		update = applyToSingletonTag.bind(null, styleElement, styleIndex, false);
-		remove = applyToSingletonTag.bind(null, styleElement, styleIndex, true);
-	} else if(obj.sourceMap &&
-		typeof URL === "function" &&
-		typeof URL.createObjectURL === "function" &&
-		typeof URL.revokeObjectURL === "function" &&
-		typeof Blob === "function" &&
-		typeof btoa === "function") {
-		styleElement = createLinkElement(options);
-		update = updateLink.bind(null, styleElement);
-		remove = function() {
-			removeStyleElement(styleElement);
-			if(styleElement.href)
-				URL.revokeObjectURL(styleElement.href);
-		};
-	} else {
-		styleElement = createStyleElement(options);
-		update = applyToTag.bind(null, styleElement);
-		remove = function() {
-			removeStyleElement(styleElement);
-		};
-	}
-
-	update(obj);
-
-	return function updateStyle(newObj) {
-		if(newObj) {
-			if(newObj.css === obj.css && newObj.media === obj.media && newObj.sourceMap === obj.sourceMap)
-				return;
-			update(obj = newObj);
-		} else {
-			remove();
-		}
-	};
-}
-
-var replaceText = (function () {
-	var textStore = [];
-
-	return function (index, replacement) {
-		textStore[index] = replacement;
-		return textStore.filter(Boolean).join('\n');
-	};
-})();
-
-function applyToSingletonTag(styleElement, index, remove, obj) {
-	var css = remove ? "" : obj.css;
-
-	if (styleElement.styleSheet) {
-		styleElement.styleSheet.cssText = replaceText(index, css);
-	} else {
-		var cssNode = document.createTextNode(css);
-		var childNodes = styleElement.childNodes;
-		if (childNodes[index]) styleElement.removeChild(childNodes[index]);
-		if (childNodes.length) {
-			styleElement.insertBefore(cssNode, childNodes[index]);
-		} else {
-			styleElement.appendChild(cssNode);
-		}
-	}
-}
-
-function applyToTag(styleElement, obj) {
-	var css = obj.css;
-	var media = obj.media;
-
-	if(media) {
-		styleElement.setAttribute("media", media)
-	}
-
-	if(styleElement.styleSheet) {
-		styleElement.styleSheet.cssText = css;
-	} else {
-		while(styleElement.firstChild) {
-			styleElement.removeChild(styleElement.firstChild);
-		}
-		styleElement.appendChild(document.createTextNode(css));
-	}
-}
-
-function updateLink(linkElement, obj) {
-	var css = obj.css;
-	var sourceMap = obj.sourceMap;
-
-	if(sourceMap) {
-		// http://stackoverflow.com/a/26603875
-		css += "\n/*# sourceMappingURL=data:application/json;base64," + btoa(unescape(encodeURIComponent(JSON.stringify(sourceMap)))) + " */";
-	}
-
-	var blob = new Blob([css], { type: "text/css" });
-
-	var oldSrc = linkElement.href;
-
-	linkElement.href = URL.createObjectURL(blob);
-
-	if(oldSrc)
-		URL.revokeObjectURL(oldSrc);
-}
-
-
-/***/ },
-/* 42 */
+/* 44 */
 /***/ function(module, exports, __webpack_require__) {
 
 // style-loader: Adds some css to the DOM by adding a <style> tag
 
 // load the styles
-var content = __webpack_require__(43);
+var content = __webpack_require__(46);
 if(typeof content === 'string') content = [[module.i, content, '']];
 // add the styles to the DOM
-var update = __webpack_require__(41)(content, {});
+var update = __webpack_require__(29)(content, {});
 if(content.locals) module.exports = content.locals;
 // Hot Module Replacement
 if(false) {
@@ -11175,10 +11238,36 @@ if(false) {
 }
 
 /***/ },
-/* 43 */
+/* 45 */
 /***/ function(module, exports, __webpack_require__) {
 
-exports = module.exports = __webpack_require__(44)();
+// style-loader: Adds some css to the DOM by adding a <style> tag
+
+// load the styles
+var content = __webpack_require__(47);
+if(typeof content === 'string') content = [[module.i, content, '']];
+// add the styles to the DOM
+var update = __webpack_require__(29)(content, {});
+if(content.locals) module.exports = content.locals;
+// Hot Module Replacement
+if(false) {
+	// When the styles change, update the <style> tags
+	if(!content.locals) {
+		module.hot.accept("!!./../../node_modules/.0.21.0@css-loader/index.js!./../../node_modules/.7.1.7@vue-loader/lib/style-rewriter.js?id=_v-68f1d9b3&file=BreadcrumbItem.vue!./../../node_modules/.2.2.3@less-loader/index.js!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=style&index=0!./BreadcrumbItem.vue", function() {
+			var newContent = require("!!./../../node_modules/.0.21.0@css-loader/index.js!./../../node_modules/.7.1.7@vue-loader/lib/style-rewriter.js?id=_v-68f1d9b3&file=BreadcrumbItem.vue!./../../node_modules/.2.2.3@less-loader/index.js!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=style&index=0!./BreadcrumbItem.vue");
+			if(typeof newContent === 'string') newContent = [[module.id, newContent, '']];
+			update(newContent);
+		});
+	}
+	// When the module is disposed, remove the <style> tags
+	module.hot.dispose(function() { update(); });
+}
+
+/***/ },
+/* 46 */
+/***/ function(module, exports, __webpack_require__) {
+
+exports = module.exports = __webpack_require__(30)();
 // imports
 
 
@@ -11189,69 +11278,33 @@ exports.push([module.i, ".breadcrumb > li + li:before {\n  padding: 0 5px;\n  co
 
 
 /***/ },
-/* 44 */
-/***/ function(module, exports) {
+/* 47 */
+/***/ function(module, exports, __webpack_require__) {
 
-/*
-	MIT License http://www.opensource.org/licenses/mit-license.php
-	Author Tobias Koppers @sokra
-*/
-// css base code, injected by the css-loader
-module.exports = function() {
-	var list = [];
+exports = module.exports = __webpack_require__(30)();
+// imports
 
-	// return the list of modules as css string
-	list.toString = function toString() {
-		var result = [];
-		for(var i = 0; i < this.length; i++) {
-			var item = this[i];
-			if(item[2]) {
-				result.push("@media " + item[2] + "{" + item[1] + "}");
-			} else {
-				result.push(item[1]);
-			}
-		}
-		return result.join("");
-	};
 
-	// import a list of modules into the list
-	list.i = function(modules, mediaQuery) {
-		if(typeof modules === "string")
-			modules = [[null, modules, ""]];
-		var alreadyImportedModules = {};
-		for(var i = 0; i < this.length; i++) {
-			var id = this[i][0];
-			if(typeof id === "number")
-				alreadyImportedModules[id] = true;
-		}
-		for(i = 0; i < modules.length; i++) {
-			var item = modules[i];
-			// skip already imported module
-			// this implementation is not 100% perfect for weird media query combinations
-			//  when a module is imported multiple times with different media queries.
-			//  I hope this will never occur (Hey this way we have smaller bundles)
-			if(typeof item[0] !== "number" || !alreadyImportedModules[item[0]]) {
-				if(mediaQuery && !item[2]) {
-					item[2] = mediaQuery;
-				} else if(mediaQuery) {
-					item[2] = "(" + item[2] + ") and (" + mediaQuery + ")";
-				}
-				list.push(item);
-			}
-		}
-	};
-	return list;
-};
+// module
+exports.push([module.i, "", ""]);
+
+// exports
 
 
 /***/ },
-/* 45 */
+/* 48 */
 /***/ function(module, exports) {
 
-module.exports = "<ol class=\"vc-breadcrumb-component breadcrumb\">\n        <slot name=\"breadcrumb-before\"></slot>\n        <template v-for=\"item in historyRoutes\">\n            <li>\n                <a :href=\"item.url\">{{ item.text }}</a>\n                <slot><span class=\"separator\">{{ separator }}</span></slot>\n                <slot name=\"separator\"></slot>\n            </li>\n        </template>\n        <li class=\"active\" v-if=\"activeRoute\">\n            {{ activeRoute.text }}\n        </li>\n        <slot name=\"breadcrumb-after\"></slot>\n    </ol>";
+module.exports = "<ol class=\"vc-breadcrumb-component breadcrumb\">\n        <slot name=\"breadcrumb-before\"></slot>\n        <slot>\n        <template v-for=\"item in historyRoutes\">\n            <li>\n                <a v-if=\"item.url\" :href=\"item.url\">{{ item.text }}</a>\n                <span v-else>{{ item.text }}</span>\n                <slot name=\"separator\"><span class=\"separator\">{{ separator }}</span></slot>\n            </li>\n        </template>\n        </slot>\n        <li class=\"active\" v-if=\"activeRoute\">\n            {{ activeRoute.text }}\n        </li>\n        <slot name=\"breadcrumb-after\"></slot>\n    </ol>";
 
 /***/ },
-/* 46 */
+/* 49 */
+/***/ function(module, exports) {
+
+module.exports = "<li>\n        <a v-if=\"item.url\" :href=\"item.url\">{{ item.text }}</a>\n        <slot><span v-else>{{ item.text }}</span></slot>\n        <slot name=\"separator\"><span class=\"separator\">{{ separator }}</span></slot>\n    </li>";
+
+/***/ },
+/* 50 */
 /***/ function(module, exports) {
 
 var g;
@@ -11276,32 +11329,32 @@ module.exports = g;
 
 
 /***/ },
-/* 47 */
+/* 51 */
 /***/ function(module, exports, __webpack_require__) {
 
-__webpack_require__(71);
+__webpack_require__(75);
 module.exports = __webpack_require__(7).Object.keys;
 
 /***/ },
-/* 48 */
+/* 52 */
 /***/ function(module, exports, __webpack_require__) {
 
-__webpack_require__(74);
-__webpack_require__(72);
-__webpack_require__(75);
+__webpack_require__(78);
 __webpack_require__(76);
+__webpack_require__(79);
+__webpack_require__(80);
 module.exports = __webpack_require__(7).Symbol;
 
 /***/ },
-/* 49 */
+/* 53 */
 /***/ function(module, exports, __webpack_require__) {
 
-__webpack_require__(73);
 __webpack_require__(77);
+__webpack_require__(81);
 module.exports = __webpack_require__(26).f('iterator');
 
 /***/ },
-/* 50 */
+/* 54 */
 /***/ function(module, exports) {
 
 module.exports = function(it){
@@ -11310,20 +11363,20 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 51 */
+/* 55 */
 /***/ function(module, exports) {
 
 module.exports = function(){ /* empty */ };
 
 /***/ },
-/* 52 */
+/* 56 */
 /***/ function(module, exports, __webpack_require__) {
 
 // false -> Array#indexOf
 // true  -> Array#includes
 var toIObject = __webpack_require__(2)
-  , toLength  = __webpack_require__(69)
-  , toIndex   = __webpack_require__(68);
+  , toLength  = __webpack_require__(73)
+  , toIndex   = __webpack_require__(72);
 module.exports = function(IS_INCLUDES){
   return function($this, el, fromIndex){
     var O      = toIObject($this)
@@ -11342,11 +11395,11 @@ module.exports = function(IS_INCLUDES){
 };
 
 /***/ },
-/* 53 */
+/* 57 */
 /***/ function(module, exports, __webpack_require__) {
 
 // optional / simple context binding
-var aFunction = __webpack_require__(50);
+var aFunction = __webpack_require__(54);
 module.exports = function(fn, that, length){
   aFunction(fn);
   if(that === undefined)return fn;
@@ -11367,12 +11420,12 @@ module.exports = function(fn, that, length){
 };
 
 /***/ },
-/* 54 */
+/* 58 */
 /***/ function(module, exports, __webpack_require__) {
 
 // all enumerable object keys, includes symbols
 var getKeys = __webpack_require__(9)
-  , gOPS    = __webpack_require__(34)
+  , gOPS    = __webpack_require__(37)
   , pIE     = __webpack_require__(19);
 module.exports = function(it){
   var result     = getKeys(it)
@@ -11387,38 +11440,38 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 55 */
+/* 59 */
 /***/ function(module, exports, __webpack_require__) {
 
 module.exports = __webpack_require__(0).document && document.documentElement;
 
 /***/ },
-/* 56 */
+/* 60 */
 /***/ function(module, exports, __webpack_require__) {
 
 // fallback for non-array-like ES3 and non-enumerable old V8 strings
-var cof = __webpack_require__(28);
+var cof = __webpack_require__(31);
 module.exports = Object('z').propertyIsEnumerable(0) ? Object : function(it){
   return cof(it) == 'String' ? it.split('') : Object(it);
 };
 
 /***/ },
-/* 57 */
+/* 61 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 7.2.2 IsArray(argument)
-var cof = __webpack_require__(28);
+var cof = __webpack_require__(31);
 module.exports = Array.isArray || function isArray(arg){
   return cof(arg) == 'Array';
 };
 
 /***/ },
-/* 58 */
+/* 62 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
 'use strict';
-var create         = __webpack_require__(32)
+var create         = __webpack_require__(35)
   , descriptor     = __webpack_require__(12)
   , setToStringTag = __webpack_require__(20)
   , IteratorPrototype = {};
@@ -11432,7 +11485,7 @@ module.exports = function(Constructor, NAME, next){
 };
 
 /***/ },
-/* 59 */
+/* 63 */
 /***/ function(module, exports) {
 
 module.exports = function(done, value){
@@ -11440,7 +11493,7 @@ module.exports = function(done, value){
 };
 
 /***/ },
-/* 60 */
+/* 64 */
 /***/ function(module, exports, __webpack_require__) {
 
 var getKeys   = __webpack_require__(9)
@@ -11455,7 +11508,7 @@ module.exports = function(object, el){
 };
 
 /***/ },
-/* 61 */
+/* 65 */
 /***/ function(module, exports, __webpack_require__) {
 
 var META     = __webpack_require__(13)('meta')
@@ -11513,7 +11566,7 @@ var meta = module.exports = {
 };
 
 /***/ },
-/* 62 */
+/* 66 */
 /***/ function(module, exports, __webpack_require__) {
 
 var dP       = __webpack_require__(5)
@@ -11531,7 +11584,7 @@ module.exports = __webpack_require__(3) ? Object.defineProperties : function def
 };
 
 /***/ },
-/* 63 */
+/* 67 */
 /***/ function(module, exports, __webpack_require__) {
 
 var pIE            = __webpack_require__(19)
@@ -11539,7 +11592,7 @@ var pIE            = __webpack_require__(19)
   , toIObject      = __webpack_require__(2)
   , toPrimitive    = __webpack_require__(24)
   , has            = __webpack_require__(1)
-  , IE8_DOM_DEFINE = __webpack_require__(30)
+  , IE8_DOM_DEFINE = __webpack_require__(33)
   , gOPD           = Object.getOwnPropertyDescriptor;
 
 exports.f = __webpack_require__(3) ? gOPD : function getOwnPropertyDescriptor(O, P){
@@ -11552,12 +11605,12 @@ exports.f = __webpack_require__(3) ? gOPD : function getOwnPropertyDescriptor(O,
 };
 
 /***/ },
-/* 64 */
+/* 68 */
 /***/ function(module, exports, __webpack_require__) {
 
 // fallback for IE11 buggy Object.getOwnPropertyNames with iframe and window
 var toIObject = __webpack_require__(2)
-  , gOPN      = __webpack_require__(33).f
+  , gOPN      = __webpack_require__(36).f
   , toString  = {}.toString;
 
 var windowNames = typeof window == 'object' && window && Object.getOwnPropertyNames
@@ -11577,12 +11630,12 @@ module.exports.f = function getOwnPropertyNames(it){
 
 
 /***/ },
-/* 65 */
+/* 69 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 19.1.2.9 / 15.2.3.2 Object.getPrototypeOf(O)
 var has         = __webpack_require__(1)
-  , toObject    = __webpack_require__(37)
+  , toObject    = __webpack_require__(40)
   , IE_PROTO    = __webpack_require__(21)('IE_PROTO')
   , ObjectProto = Object.prototype;
 
@@ -11595,7 +11648,7 @@ module.exports = Object.getPrototypeOf || function(O){
 };
 
 /***/ },
-/* 66 */
+/* 70 */
 /***/ function(module, exports, __webpack_require__) {
 
 // most Object methods by ES6 should accept primitives
@@ -11610,7 +11663,7 @@ module.exports = function(KEY, exec){
 };
 
 /***/ },
-/* 67 */
+/* 71 */
 /***/ function(module, exports, __webpack_require__) {
 
 var toInteger = __webpack_require__(23)
@@ -11632,7 +11685,7 @@ module.exports = function(TO_STRING){
 };
 
 /***/ },
-/* 68 */
+/* 72 */
 /***/ function(module, exports, __webpack_require__) {
 
 var toInteger = __webpack_require__(23)
@@ -11644,7 +11697,7 @@ module.exports = function(index, length){
 };
 
 /***/ },
-/* 69 */
+/* 73 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 7.1.15 ToLength
@@ -11655,13 +11708,13 @@ module.exports = function(it){
 };
 
 /***/ },
-/* 70 */
+/* 74 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
 'use strict';
-var addToUnscopables = __webpack_require__(51)
-  , step             = __webpack_require__(59)
+var addToUnscopables = __webpack_require__(55)
+  , step             = __webpack_require__(63)
   , Iterators        = __webpack_require__(17)
   , toIObject        = __webpack_require__(2);
 
@@ -11669,7 +11722,7 @@ var addToUnscopables = __webpack_require__(51)
 // 22.1.3.13 Array.prototype.keys()
 // 22.1.3.29 Array.prototype.values()
 // 22.1.3.30 Array.prototype[@@iterator]()
-module.exports = __webpack_require__(31)(Array, 'Array', function(iterated, kind){
+module.exports = __webpack_require__(34)(Array, 'Array', function(iterated, kind){
   this._t = toIObject(iterated); // target
   this._i = 0;                   // next index
   this._k = kind;                // kind
@@ -11695,35 +11748,35 @@ addToUnscopables('values');
 addToUnscopables('entries');
 
 /***/ },
-/* 71 */
+/* 75 */
 /***/ function(module, exports, __webpack_require__) {
 
 // 19.1.2.14 Object.keys(O)
-var toObject = __webpack_require__(37)
+var toObject = __webpack_require__(40)
   , $keys    = __webpack_require__(9);
 
-__webpack_require__(66)('keys', function(){
+__webpack_require__(70)('keys', function(){
   return function keys(it){
     return $keys(toObject(it));
   };
 });
 
 /***/ },
-/* 72 */
+/* 76 */
 /***/ function(module, exports) {
 
 
 
 /***/ },
-/* 73 */
+/* 77 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
 'use strict';
-var $at  = __webpack_require__(67)(true);
+var $at  = __webpack_require__(71)(true);
 
 // 21.1.3.27 String.prototype[@@iterator]()
-__webpack_require__(31)(String, 'String', function(iterated){
+__webpack_require__(34)(String, 'String', function(iterated){
   this._t = String(iterated); // target
   this._i = 0;                // next index
 // 21.1.5.2.1 %StringIteratorPrototype%.next()
@@ -11738,7 +11791,7 @@ __webpack_require__(31)(String, 'String', function(iterated){
 });
 
 /***/ },
-/* 74 */
+/* 78 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -11748,8 +11801,8 @@ var global         = __webpack_require__(0)
   , has            = __webpack_require__(1)
   , DESCRIPTORS    = __webpack_require__(3)
   , $export        = __webpack_require__(16)
-  , redefine       = __webpack_require__(36)
-  , META           = __webpack_require__(61).KEY
+  , redefine       = __webpack_require__(39)
+  , META           = __webpack_require__(65).KEY
   , $fails         = __webpack_require__(8)
   , shared         = __webpack_require__(22)
   , setToStringTag = __webpack_require__(20)
@@ -11757,16 +11810,16 @@ var global         = __webpack_require__(0)
   , wks            = __webpack_require__(6)
   , wksExt         = __webpack_require__(26)
   , wksDefine      = __webpack_require__(25)
-  , keyOf          = __webpack_require__(60)
-  , enumKeys       = __webpack_require__(54)
-  , isArray        = __webpack_require__(57)
+  , keyOf          = __webpack_require__(64)
+  , enumKeys       = __webpack_require__(58)
+  , isArray        = __webpack_require__(61)
   , anObject       = __webpack_require__(10)
   , toIObject      = __webpack_require__(2)
   , toPrimitive    = __webpack_require__(24)
   , createDesc     = __webpack_require__(12)
-  , _create        = __webpack_require__(32)
-  , gOPNExt        = __webpack_require__(64)
-  , $GOPD          = __webpack_require__(63)
+  , _create        = __webpack_require__(35)
+  , gOPNExt        = __webpack_require__(68)
+  , $GOPD          = __webpack_require__(67)
   , $DP            = __webpack_require__(5)
   , $keys          = __webpack_require__(9)
   , gOPD           = $GOPD.f
@@ -11891,9 +11944,9 @@ if(!USE_NATIVE){
 
   $GOPD.f = $getOwnPropertyDescriptor;
   $DP.f   = $defineProperty;
-  __webpack_require__(33).f = gOPNExt.f = $getOwnPropertyNames;
+  __webpack_require__(36).f = gOPNExt.f = $getOwnPropertyNames;
   __webpack_require__(19).f  = $propertyIsEnumerable;
-  __webpack_require__(34).f = $getOwnPropertySymbols;
+  __webpack_require__(37).f = $getOwnPropertySymbols;
 
   if(DESCRIPTORS && !__webpack_require__(18)){
     redefine(ObjectProto, 'propertyIsEnumerable', $propertyIsEnumerable, true);
@@ -11979,22 +12032,22 @@ setToStringTag(Math, 'Math', true);
 setToStringTag(global.JSON, 'JSON', true);
 
 /***/ },
-/* 75 */
+/* 79 */
 /***/ function(module, exports, __webpack_require__) {
 
 __webpack_require__(25)('asyncIterator');
 
 /***/ },
-/* 76 */
+/* 80 */
 /***/ function(module, exports, __webpack_require__) {
 
 __webpack_require__(25)('observable');
 
 /***/ },
-/* 77 */
+/* 81 */
 /***/ function(module, exports, __webpack_require__) {
 
-__webpack_require__(70);
+__webpack_require__(74);
 var global        = __webpack_require__(0)
   , hide          = __webpack_require__(4)
   , Iterators     = __webpack_require__(17)
@@ -12009,25 +12062,25 @@ for(var collections = ['NodeList', 'DOMTokenList', 'MediaList', 'StyleSheetList'
 }
 
 /***/ },
-/* 78 */
+/* 82 */
 /***/ function(module, exports, __webpack_require__) {
 
-module.exports = { "default": __webpack_require__(47), __esModule: true };
+module.exports = { "default": __webpack_require__(51), __esModule: true };
 
 /***/ },
-/* 79 */
+/* 83 */
 /***/ function(module, exports, __webpack_require__) {
 
-module.exports = { "default": __webpack_require__(48), __esModule: true };
+module.exports = { "default": __webpack_require__(52), __esModule: true };
 
 /***/ },
-/* 80 */
+/* 84 */
 /***/ function(module, exports, __webpack_require__) {
 
-module.exports = { "default": __webpack_require__(49), __esModule: true };
+module.exports = { "default": __webpack_require__(53), __esModule: true };
 
 /***/ },
-/* 81 */
+/* 85 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -12035,11 +12088,11 @@ module.exports = { "default": __webpack_require__(49), __esModule: true };
 
 exports.__esModule = true;
 
-var _iterator = __webpack_require__(80);
+var _iterator = __webpack_require__(84);
 
 var _iterator2 = _interopRequireDefault(_iterator);
 
-var _symbol = __webpack_require__(79);
+var _symbol = __webpack_require__(83);
 
 var _symbol2 = _interopRequireDefault(_symbol);
 
@@ -12054,7 +12107,7 @@ exports.default = typeof _symbol2.default === "function" && _typeof(_iterator2.d
 };
 
 /***/ },
-/* 82 */
+/* 86 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
@@ -12064,11 +12117,11 @@ Object.defineProperty(exports, "__esModule", {
     value: true
 });
 
-var _keys = __webpack_require__(78);
+var _keys = __webpack_require__(82);
 
 var _keys2 = _interopRequireDefault(_keys);
 
-var _typeof2 = __webpack_require__(81);
+var _typeof2 = __webpack_require__(85);
 
 var _typeof3 = _interopRequireDefault(_typeof2);
 
@@ -12077,13 +12130,15 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 // <template>
 //     <ol class="vc-breadcrumb-component breadcrumb">
 //         <slot name="breadcrumb-before"></slot>
+//         <slot>
 //         <template v-for="item in historyRoutes">
 //             <li>
-//                 <a :href="item.url">{{ item.text }}</a>
-//                 <slot><span class="separator">{{ separator }}</span></slot>
-//                 <slot name="separator"></slot>
+//                 <a v-if="item.url" :href="item.url">{{ item.text }}</a>
+//                 <span v-else>{{ item.text }}</span>
+//                 <slot name="separator"><span class="separator">{{ separator }}</span></slot>
 //             </li>
 //         </template>
+//         </slot>
 //         <li class="active" v-if="activeRoute">
 //             {{ activeRoute.text }}
 //         </li>
@@ -12104,9 +12159,17 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 
 // <script>
 exports.default = {
+    name: 'vc-breadcrumb',
     props: {
-        routes: Array,
-        separator: '/'
+        routes: {
+            type: Array,
+            default: function _default() {
+                return [];
+            }
+        },
+        separator: {
+            default: '/'
+        }
     },
     computed: {
         rs: function rs() {
@@ -12121,7 +12184,7 @@ exports.default = {
                 }
                 return ret;
             } else if (Array.isArray(this.routes)) {
-                if (this.routes[0].url && this.routes[0].text) return this.routes;
+                return this.routes;
             } else {
                 console.warn('[vcBreadcrumb warn]: pay attention to the routes you pass in!');
                 return void 0;
@@ -12138,14 +12201,67 @@ exports.default = {
 // </script>
 
 /***/ },
-/* 83 */
+/* 87 */
+/***/ function(module, exports) {
+
+"use strict";
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+    value: true
+});
+// <template>
+//     <li>
+//         <a v-if="item.url" :href="item.url">{{ item.text }}</a>
+//         <slot><span v-else>{{ item.text }}</span></slot>
+//         <slot name="separator"><span class="separator">{{ separator }}</span></slot>
+//     </li>
+// </template>
+
+// <style>
+// </style>
+
+// <script>
+exports.default = {
+    name: 'vc-breadcrumb-item',
+    props: {
+        text: String,
+        url: String
+    },
+    data: function data() {
+        return {
+            item: {}
+        };
+    },
+    ready: function ready() {
+        var text = void 0;
+        try {
+            this.text = this._slotContents.default.textContent;
+        } catch (e) {
+            console.error(e);
+        }
+        this.item.text = this.text;
+        this.item.url = this.url;
+        this.$parent.routes.push(this.item);
+    },
+
+    computed: {
+        separator: function separator() {
+            return this.$parent.separator;
+        }
+    }
+};
+// </script>
+
+/***/ },
+/* 88 */
 /***/ function(module, exports, __webpack_require__) {
 
-__webpack_require__(42)
-module.exports = __webpack_require__(82)
+__webpack_require__(44)
+module.exports = __webpack_require__(86)
 
 if (module.exports.__esModule) module.exports = module.exports.default
-;(typeof module.exports === "function" ? module.exports.options : module.exports).template = __webpack_require__(45)
+;(typeof module.exports === "function" ? module.exports.options : module.exports).template = __webpack_require__(48)
 if (false) {
 (function () {
 var hotAPI = require("vue-hot-reload-api")
@@ -12163,21 +12279,49 @@ hotAPI.update(id, newOptions, newTemplate)
 }
 
 /***/ },
-/* 84 */
+/* 89 */
+/***/ function(module, exports, __webpack_require__) {
+
+__webpack_require__(45)
+module.exports = __webpack_require__(87)
+
+if (module.exports.__esModule) module.exports = module.exports.default
+;(typeof module.exports === "function" ? module.exports.options : module.exports).template = __webpack_require__(49)
+if (false) {
+(function () {
+var hotAPI = require("vue-hot-reload-api")
+hotAPI.install(require("vue"))
+if (!hotAPI.compatible) return
+var id = "-!babel!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=script&index=0!./BreadcrumbItem.vue"
+hotAPI.createRecord(id, module.exports)
+module.hot.accept(["-!babel!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=script&index=0!./BreadcrumbItem.vue","-!vue-html-loader!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=template&index=0!./BreadcrumbItem.vue"], function () {
+var newOptions = require("-!babel!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=script&index=0!./BreadcrumbItem.vue")
+if (newOptions && newOptions.__esModule) newOptions = newOptions.default
+var newTemplate = require("-!vue-html-loader!./../../node_modules/.7.1.7@vue-loader/lib/selector.js?type=template&index=0!./BreadcrumbItem.vue")
+hotAPI.update(id, newOptions, newTemplate)
+})
+})()
+}
+
+/***/ },
+/* 90 */
 /***/ function(module, exports, __webpack_require__) {
 
 "use strict";
 'use strict';
 
-var _vue = __webpack_require__(38);
+var _vue = __webpack_require__(41);
 
 var _vue2 = _interopRequireDefault(_vue);
 
-var _src = __webpack_require__(39);
+var _src = __webpack_require__(42);
 
 var _src2 = _interopRequireDefault(_src);
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var vcBreadcrumbItem = _src2.default.vcBreadcrumbItem;
+
 
 var vcSeparator = _vue2.default.extend({
     template: '<span class="separator-class">-/-</span>'
@@ -12185,6 +12329,11 @@ var vcSeparator = _vue2.default.extend({
 
 new _vue2.default({
     el: '#app',
+    components: {
+        vcBreadcrumb: _src2.default,
+        vcBreadcrumbItem: vcBreadcrumbItem,
+        vcSeparator: vcSeparator
+    },
     data: function data() {
         return {
             defaults: false,
@@ -12208,10 +12357,6 @@ new _vue2.default({
         customsFn: function customsFn() {
             this.defaults = false;
         }
-    },
-    components: {
-        vcSeparator: vcSeparator,
-        vcBreadcrumb: _src2.default
     }
 });
 
